@@ -17,7 +17,8 @@ class DFCSR_postprocessor():
         self.wake_filename = os.path.join(path, f'{run_name}-wakes.h5')
         self.particle_prefix = os.path.join(path, f'{run_name}-particles')
         self.statistics_filename = os.path.join(path, f'{run_name}-statistics.h5')
-def get_particles(self, step = None):
+    
+    def get_particles(self, step = None):
 
         if step is None:
             filename = self.particle_prefix + '-end.h5'

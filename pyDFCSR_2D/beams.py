@@ -160,10 +160,10 @@ class Beam():
         # Convert energy from J/m to eV/init_energy
         dE_E1 = step_size * dE_dct * 1e6 / self.init_energy  # self.energy in eV
 
-        # Create an interpolator that will transfer the CSR wake from the CSR mesh to the DF mesh
+        # Create an interpolator that will transfer the CSR wake from the CSR mesh to the beam's particles
         interp = RegularGridInterpolator((xrange, zrange), dE_E1, fill_value=0.0, bounds_error=False)
 
-        # Apply the interpolator to populate the DF mesh
+        # Apply the interpolator to populate the change in momentum for all particles in the beam
         dE_Es = interp(np.array([self.x_transform, self.z]).T)
 
         # Apply longitudinal kick, note that since the electrons are moving at near the speed of light,

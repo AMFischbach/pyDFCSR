@@ -183,7 +183,7 @@ class Lattice():
         self._lattice_length = self.distance[-1]
 
     def build_interpolant(self):
-        # Computes min, max, and average change of x along reference trajectory
+        # Computes min, max, and average change of x (really s) along reference trajectory
         self.min_x, self.max_x = self.s[0], self.s[-1]
         self.delta_x = (self.max_x - self.min_x) / (self.s.shape[0] - 1)
         #self.F_x_ref = RegularGridInterpolator(points=(self.s,), values=self.coords[:, 0], method='linear',bounds_error = False)
@@ -241,7 +241,6 @@ class Lattice():
 
         # The number of steps at which the CSR wake will be computed
         self._CSR_steps_count = len(self._CSR_steps_index)
-
 
     @property
     def lattice_length(self):

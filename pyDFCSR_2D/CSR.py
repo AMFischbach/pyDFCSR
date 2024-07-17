@@ -5,6 +5,7 @@ from .tools import dict2hdf5
 import h5py
 import numpy as np
 from mpi4py import MPI
+import matplotlib.pyplot as plt
 
 from .beams import Beam
 # from .deposit import histogram_cic_1d, histogram_cic_2d
@@ -269,7 +270,6 @@ class CSR2D:
         """
         Computes the CSR wake using the configurations setup in __init__
         """
-
         if (not self.parallel) or (self.rank == 0):
             print('Starting the DFCSR run')
 
@@ -454,7 +454,6 @@ class CSR2D:
         # Record data to file
         self.dump_beam(label='end')
         self.write_statistics()
-
 
     def get_CSR_mesh(self):
         """
@@ -1015,3 +1014,87 @@ class CSR2D:
             hf.create_dataset(name='n_vec', data=self.lattice.n_vec)
             hf.create_dataset(name='tau_vec', data=self.lattice.tau_vec)
             dict2hdf5(hf, self.statistics)
+
+    def testing(self):
+        """
+        A function to test this code with the new code
+        """
+        # Input what what our beam looks like currently to get the density functions
+        self.DF_tracker.get_DF(x=self.beam.x, z=self.beam.z, px=self.beam.px, t=self.beam.position)
+
+        """
+        #self.plot_beam()
+        Z, X = np.meshgrid(self.DF_tracker.z_grids, self.DF_tracker.x_grids)
+        np.savez('data_program1.npz', Z=Z, X=X, intensity_vals=self.DF_tracker.density)
+        """
+
+        print(self.beam.px)
+        """
+        self.plot_histogram(self.DF_tracker.density, "density")
+        self.plot_surface(self.DF_tracker.density, "density")
+        self.plot_histogram(self.DF_tracker.vx, "beta_x")
+        self.plot_surface(self.DF_tracker.vx, "beta_x")
+        self.plot_histogram(self.DF_tracker.density_x, "partial_density_x")
+        self.plot_surface(self.DF_tracker.density_x, "partial_density_x")
+        self.plot_histogram(self.DF_tracker.density_z, "partial_density_z")
+        self.plot_surface(self.DF_tracker.density_z, "partial_density_z")
+        self.plot_histogram(self.DF_tracker.vx_x, "partial_beta_x")
+        self.plot_surface(self.DF_tracker.vx_x, "partial_beta_x")
+        """
+
+    def plot_histogram(self, intensity_vals, title):
+        plt.figure()
+        
+        Z, X = np.meshgrid(self.DF_tracker.z_grids, self.DF_tracker.x_grids)
+
+        intensity_vals = intensity_vals.reshape((len(self.DF_tracker.z_grids), len(self.DF_tracker.z_grids)))
+
+        plt.pcolormesh(Z, X, intensity_vals, shading='auto', cmap='viridis')
+
+        plt.colorbar(label='Values')
+
+        plt.axis("equal")
+
+        plt.title(title)
+        plt.xlabel("z")
+        plt.ylabel("x")
+
+        plt.show()
+
+    def plot_surface(self, intensity_vals, title=""):
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        Z, X = np.meshgrid(self.DF_tracker.z_grids, self.DF_tracker.x_grids)
+
+        surface = ax.plot_surface(Z, X, intensity_vals, cmap='viridis')
+
+        # Add a color bar which maps values to colors
+        fig.colorbar(surface, ax=ax, shrink=0.5, aspect=5)
+
+        # Labels
+        ax.set_xlabel('Z axis')
+        ax.set_ylabel('X axis')
+        ax.set_zlabel('intensity axis')
+        ax.set_title(title)
+        ax.set_aspect('auto')
+
+        plt.show()
+
+    def plot_beam(self):
+        fig, ax = plt.subplots()
+        ax.scatter(self.beam.z, self.beam.x, color="red", s=10, label="Beam Distribution")
+        ax.set_xlabel("z")
+        ax.set_ylabel("x")
+        ax.axis("equal")
+        ax.legend()
+        
+        plt.show()
+
+
+        
+
+
+
+

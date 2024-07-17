@@ -16,7 +16,9 @@ def interpolate1D(xval, data, min_x, delta_x):
     Quick interpolator for 1D values
     Parameters:
         xvals: np array of positions to interpolate values at
-        data: the
+        data: the value of the function at each slice
+        min_x: the smallest slice position
+        delta_x: the change in position between slices
     """
     result = np.zeros(xval.shape)
     x_size = data.shape[0]
@@ -30,9 +32,7 @@ def interpolate1D(xval, data, min_x, delta_x):
         else:
             x1 = x0 + 1
 
-
         xd = x - x0
-
 
         if x0 >= 0 and x1 < x_size:
             result[i] = v_c[x0] * (1 - xd) + v_c[x1] * xd

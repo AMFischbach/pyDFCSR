@@ -87,7 +87,6 @@ def histogram_cic_2d(q1, q2, w,
 
     return (hist_data)
 
-
 class DF_tracker:
     """
     The class for the 'distribution function' (DF) of a beam
@@ -113,7 +112,7 @@ class DF_tracker:
         self.density_x = None
         self.density_z = None
 
-        # Velocity and velcoity graident histograms
+        # Velocity and velcoity gradient histograms
         self.vx = None
         self.vx_x = None
 
@@ -491,7 +490,7 @@ class DF_tracker:
 
         # TODO: rename these variables to make more intutive sense
 
-        # In our 3D matrix 'x' is time 'y' is x and 'z' is z
+        # In our 3D matrix 'x' is time 'y' is x and 'z' is s
         # The time range of interpolation meshes
         self.min_x, self.max_x = self.time_interp[0], self.time_interp[-1]
 
