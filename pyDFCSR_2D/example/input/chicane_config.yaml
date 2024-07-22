@@ -25,9 +25,9 @@ CSR_integration:
 
 
 CSR_computation:
-  compute_CSR: 1                # if zero, only track the beam
-  apply_CSR: 1                   # flag apply CSR to particles
-  transverse_on: 1               # flag include transverse wake
+  compute_CSR: 0                # if zero, only track the beam
+  apply_CSR: 0                   # flag apply CSR to particles
+  transverse_on: 0               # flag include transverse wake
   xbins: 10                    # The mesh on which CSR wake is computed
   zbins: 30
   xlim: 3

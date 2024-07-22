@@ -42,11 +42,11 @@ class Lattice():
         # Loops through all steps and compute their characteristics
         (self.step_size,
          self.total_steps,
-         self.step_position,
+         self.step_positions,
          self.compute_CSR) = get_step_characteristics(self.lattice_config, self.element_distances, self.CSR_step_seperation)
 
         # Loops through the steps again to compute bmadx_elements for each step
-        self.bmadx_elements = get_bmdax_elements(self.lattice_config, self.element_distances, self.step_position, init_energy)
+        self.bmadx_elements = get_bmdax_elements(self.lattice_config, self.element_distances, self.step_positions, init_energy)
 
         # Finely samples the reference trajectory at many points
         (self.sample_s_vals,

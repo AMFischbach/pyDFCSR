@@ -18,13 +18,13 @@ def init_attributes(input_dict = {}):
     """
     
     integration_params = init_integration_params(**input_dict.get("CSR_integration", {}))
+    histo_mesh_params = init_histo_params(**input_dict.get("particle_deposition", {}))
     CSR_mesh_params = init_CSR_params(**input_dict.get("CSR_computation", {}))
-    
 
     beam = Beam(input_dict["input_beam"])
     lattice = Lattice(input_dict["input_lattice"], beam.init_energy)
 
-    step_snaphots = init_snapshots(lattice.total_steps, input_dict)
+    step_snaphots = init_snapshots(lattice.total_steps, histo_mesh_params, CSR_mesh_params)
     statistics = init_stats(lattice.total_steps)
 
     return statistics, integration_params, CSR_mesh_params, lattice, beam, step_snaphots
@@ -34,37 +34,47 @@ def init_stats(total_steps):
     Initialize the statitics dictionary, which stores the twiss of the beam at each step
     (also a dictionary) and other various statistics. All statistics are a np array which have an
     element for each 'step' in the lattice.
+    Parameters:
+        total_steps: the number of steps in the lattice
     """
-
-    # The number of steps in the lattice
-    Nstep = total_steps
 
     # Preallocate size based upon Nstep of np arrays for speed
     statistics = {}
-    statistics['twiss'] = {'alpha_x': np.zeros(Nstep),
-                                'beta_x': np.zeros(Nstep),
-                                'gamma_x': np.zeros(Nstep),
-                                'emit_x': np.zeros(Nstep),
-                                'eta_x': np.zeros(Nstep),
-                                'etap_x': np.zeros(Nstep),
-                                'norm_emit_x': np.zeros(Nstep),
-                                'alpha_y': np.zeros(Nstep),
-                                'beta_y': np.zeros(Nstep),
-                                'gamma_y': np.zeros(Nstep),
-                                'emit_y': np.zeros(Nstep),
-                                'eta_y': np.zeros(Nstep),
-                                'etap_y': np.zeros(Nstep),
-                                'norm_emit_y': np.zeros(Nstep)}
+    statistics['twiss'] = {'alpha_x': np.zeros(total_steps),
+                                'beta_x': np.zeros(total_steps),
+                                'gamma_x': np.zeros(total_steps),
+                                'emit_x': np.zeros(total_steps),
+                                'eta_x': np.zeros(total_steps),
+                                'etap_x': np.zeros(total_steps),
+                                'norm_emit_x': np.zeros(total_steps),
+                                'alpha_y': np.zeros(total_steps),
+                                'beta_y': np.zeros(total_steps),
+                                'gamma_y': np.zeros(total_steps),
+                                'emit_y': np.zeros(total_steps),
+                                'eta_y': np.zeros(total_steps),
+                                'etap_y': np.zeros(total_steps),
+                                'norm_emit_y': np.zeros(total_steps)}
 
-    statistics['slope'] = np.zeros((Nstep, 2))
-    statistics['sigma_x'] = np.zeros(Nstep)
-    statistics['sigma_z'] = np.zeros(Nstep)
-    statistics['sigma_energy'] = np.zeros(Nstep)
-    statistics['mean_x']  = np.zeros(Nstep)
-    statistics['mean_z'] = np.zeros(Nstep)
-    statistics['mean_energy'] = np.zeros(Nstep)
+    statistics['slope'] = np.zeros((total_steps, 2))
+    statistics['sigma_x'] = np.zeros(total_steps)
+    statistics['sigma_z'] = np.zeros(total_steps)
+    statistics['sigma_energy'] = np.zeros(total_steps)
+    statistics['mean_x']  = np.zeros(total_steps)
+    statistics['mean_z'] = np.zeros(total_steps)
+    statistics['mean_energy'] = np.zeros(total_steps)
 
     return statistics
+
+def init_histo_params(pbins=100, obins=100, plim=5, olim=5, filter_order=1, filter_window=5, velocity_threshold=1000):
+    """
+    Initialize the histogram parameters, this dictionary is fed into the step snapshot initalizer
+    """
+    keys = ["pbins", "obins", "plim", "olim", "filter_order", "filter_window", "velocity_threshold"]
+    values = [pbins, obins, plim, olim, filter_order, filter_window, velocity_threshold]
+
+    histo_mesh_params = {k: v for k, v in zip(keys, values)}
+
+    return histo_mesh_params
 
 def init_integration_params(n_formation_length = 4, zbins = 200, xbins = 200):
     """ Initializes the integration_params dictionary"""
@@ -90,7 +100,7 @@ def init_CSR_params(workdir = '.', apply_CSR = 1, compute_CSR = 1, transverse_on
 
     return CSR_params
 
-def init_snapshots(step_num, input_dict):
+def init_snapshots(step_num, histo_mesh_params, CSR_mesh_params):
         """
         Initializes all snapshot instances which preallocates all np arrays
         """
@@ -98,7 +108,7 @@ def init_snapshots(step_num, input_dict):
 
         # For each step initialize a snapshot
         for step_index in range(step_num):
-            snapshots[step_index] = Step_Snapshot(**input_dict.get("particle_deposition", {}))
+            snapshots[step_index] = Step_Snapshot(step_index, histo_mesh_params, CSR_mesh_params)
 
         return snapshots
         

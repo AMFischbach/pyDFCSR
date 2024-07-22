@@ -306,7 +306,7 @@ class CSR2D:
                 #TODO: Bmadx seems to have some problems when DL is very small
                 if DL_1 > 1.0e-6:
                     # Create bmadx element object for the previous element
-                    element = self.get_bmadx_element(ele=ele_prev, type=type_prev, DL=DL_1, exit=True)
+                    element = self.get_bmadx_element(ele=ele_prev, DL=DL_1, exit=True)
 
                     # Propagate
                     self.beam.track(element, DL_1, update_step=False)
@@ -318,7 +318,7 @@ class CSR2D:
             # we propagate the beam through it all at once
             if steps == 0:
                 skip_ele = True
-                element = self.get_bmadx_element(ele=ele, type=type, DL=L, exit=True, entrance = True)
+                element = self.get_bmadx_element(ele=ele, DL=L, exit=True, entrance = True)
                 self.beam.track(element, L, update_step=False)
 
             # ---------------initialize lattice element characteristic variables--------------- #
@@ -381,6 +381,8 @@ class CSR2D:
                 if debug or self.CSR_params.compute_CSR:
                     # Input what what our beam looks like currently to get the density functions
                     self.DF_tracker.get_DF(x=self.beam.x, z=self.beam.z, px=self.beam.px, t=self.beam.position)
+
+                    self.plot_histogram(self.DF_tracker.density, "density")
 
                     # Append the density functions to the log
                     self.DF_tracker.append_DF()
@@ -1043,7 +1045,7 @@ class CSR2D:
         """
 
     def plot_histogram(self, intensity_vals, title):
-        plt.figure()
+        fig, ax = plt.subplots()
         
         Z, X = np.meshgrid(self.DF_tracker.z_grids, self.DF_tracker.x_grids)
 
@@ -1053,13 +1055,15 @@ class CSR2D:
 
         plt.colorbar(label='Values')
 
-        plt.axis("equal")
+        #plt.axis("equal")
 
         plt.title(title)
         plt.xlabel("z")
         plt.ylabel("x")
 
-        plt.show()
+        plt.savefig(title+".png")
+        plt.close(fig)
+
 
     def plot_surface(self, intensity_vals, title=""):
 
@@ -1087,7 +1091,7 @@ class CSR2D:
         ax.scatter(self.beam.z, self.beam.x, color="red", s=10, label="Beam Distribution")
         ax.set_xlabel("z")
         ax.set_ylabel("x")
-        ax.axis("equal")
+        #ax.axis("equal")
         ax.legend()
         
         plt.show()

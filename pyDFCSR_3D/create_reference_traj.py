@@ -34,7 +34,7 @@ def get_step_characteristics(lattice_config, element_distances, CSR_step_seperat
 
         #Todo: Deal with the endpoint
         # Array with nth element containing the nth step position
-        step_position = np.arange(0, lattice_length + step_size/2, step_size)
+        step_position = np.round(np.arange(0, lattice_length + step_size/2, step_size), 10)
 
         # Total number of steps in the lattice
         total_steps = len(step_position)
@@ -214,14 +214,15 @@ def get_trajectory_characteristics(lattice_config, element_distances, sample_num
     return sample_s_vals, lab_frame_sample_coords, sample_n_vecs, sample_tau_vecs
 
 
-def get_bmdax_elements(lattice_config, e_dists, step_position, init_energy):
+def get_bmdax_elements(lattice_config, e_dists, step_positions, init_energy):
     """
     Creates the bmadx elements that each step propagates through, a bit complicated but very clean :)
     Note that we have to round some algebra bc the floating point numbers were a bit off and messing up the
     entrance/exit mechanisms
     Parameters:
         element_distances: distance[i] is the distance between the entrance and the end of ith lattice element
-        step_position: the s val of each step in the lattice
+        step_positions: the s val of each step in the lattice
+        init_energy: the energy of the reference trajectory, necessary for bmadx element creation 
     Returns:
         bmadx_elements: array holding bmadx elements, len = step_size-1, corresponds to the 
                         lattice element from the step_index to the next step_index, may contain
@@ -231,7 +232,7 @@ def get_bmdax_elements(lattice_config, e_dists, step_position, init_energy):
     element_names = list(lattice_config.keys())[1:]
 
     # Initialize bmadx_array
-    bmadx_elements = [None]*(len(step_position)-1)
+    bmadx_elements = [None]*(len(step_positions)-1)
 
     # Insert zero into the element_distances array
     e_dists = np.insert(e_dists, 0, 0.0)
@@ -245,46 +246,71 @@ def get_bmdax_elements(lattice_config, e_dists, step_position, init_energy):
     previous_e = -1
 
     # Loop through each step and create bmadx elements
-    for i in range(len(step_position)-1):
+    for i in range(len(step_positions)-1):
 
         # Given a position on the nominal trajectory, finds the index of the lattice element that it is within
-        current_e = next(e_index for e_index in range(len(e_dists)-1) if condition1(e_dists[e_index], e_dists[e_index+1], step_position[i]))
+        current_e = next(e_index for e_index in range(len(e_dists)-1) if condition1(e_dists[e_index], e_dists[e_index+1], step_positions[i]))
 	    
         # Find the element that the next slice is in
-        next_e = next(e_index for e_index in range(len(e_dists)-1) if condition2(e_dists[e_index], e_dists[e_index+1], step_position[i+1]))
+        next_e = next(e_index for e_index in range(len(e_dists)-1) if condition2(e_dists[e_index], e_dists[e_index+1], step_positions[i+1]))
         
         # Get the distance between the two slices
-        slice_length = round(step_position[i+1] - step_position[i], 10)
+        slice_length = round(step_positions[i+1] - step_positions[i], 10)
 
-        # If the step cross an element boundary, we have to make two bmadx elements
+        # If the step cross an element boundary, we have to make two or more (in the case of skipping) bmadx elements
         if current_e != next_e:
-            # The distance remaining in the first element
-            dist1 = round(e_dists[next_e] - step_position[i], 10)
+            # List of bmadx elements for this step
+            step_elements = []
 
-            # The distance remaining in the second element
-            dist2 = round(slice_length - dist1, 10)
+            # Keeps track of where we are in the lattice
+            current_distance = step_positions[i]
 
-            #TODO: Bmadx seems to have some problems when the distance is very small
-            if dist1 > 1.0e-6 and dist2 > 1.0e-6:
-                # Create bmadx element object for the previous element and append it to the bmadx_array
-                bmadx_element1 = create_bmadx_element(lattice_config, element_names[current_e], dist1, init_energy, exit=True)
-                bmadx_element2 = create_bmadx_element(lattice_config, element_names[next_e], dist2, init_energy, entrance=True)
-                bmadx_elements[i] = [bmadx_element1, bmadx_element2]
-            
-            elif dist1 > 1.0e-6 and dist2 < 1.0e-6:
-                bmadx_element1 = create_bmadx_element(lattice_config, element_names[current_e], dist1, init_energy, exit=True)
-                bmadx_elements[i] = [bmadx_element1]
+            # Loop through all elements that the step covers
+            for e in range(current_e, next_e):
 
-            elif dist1 > 1.0e-6 and dist2 < 1.0e-6:
-                bmadx_element2 = create_bmadx_element(lattice_config, element_names[next_e], dist2, init_energy, exit=True)
-                bmadx_elements[i] = [bmadx_element2]
+                # The distance remaining in the first element
+                dist1 = round(e_dists[e+1] - current_distance, 10)
 
-            else:
-                print("ERROR: STEP TOO SMALL")
+                # The distance remaining in the second element (either it goes through the next element or it does not)
+                dist2 = round(min(e_dists[e+2] - e_dists[e+1], step_positions[i+1] - e_dists[e+1]), 10)
+
+                #TODO: Bmadx seems to have some problems when the distance is very small
+                if dist1 > 1.0e-6 and dist2 > 1.0e-6:
+                    # Create bmadx element object for the previous element and append it to the bmadx_array
+                    bmadx_element1 = create_bmadx_element(lattice_config, element_names[e], dist1, init_energy, exit=True)
+
+                    # Sometimes while looping we start to jump through entire elements, in this case we need to set entrance and exit as true
+                    exit_status = (dist2 == round(e_dists[e+2] - e_dists[e+1], 10))
+                    bmadx_element2 = create_bmadx_element(lattice_config, element_names[e+1], dist2, init_energy, entrance=True, exit=exit_status)
+
+                    step_elements.append(bmadx_element1)
+                    step_elements.append(bmadx_element2)
+                
+                elif dist1 > 1.0e-6 and dist2 < 1.0e-6:
+                    bmadx_element1 = create_bmadx_element(lattice_config, element_names[e], dist1, init_energy, exit=True)
+                    step_elements.append(bmadx_element1)
+
+                elif dist1 < 1.0e-6 and dist2 > 1.0e-6:
+                    # Sometimes while looping we start to jump through entire elements, in this case we need to set entrance and exit as true
+                    exit_status = (dist2 == round(e_dists[e+2] - e_dists[e+1], 10))
+                    bmadx_element2 = create_bmadx_element(lattice_config, element_names[e+1], dist2, init_energy, entrance=True, exit=exit_status)
+
+                    step_elements.append(bmadx_element2)
+
+                else:
+                    print("ERROR: STEP TOO SMALL")
+
+                # Update the current distance
+                current_distance += round(dist1 + dist2, 10)
+
+            # We need to update the current element becuase we crossed an element boundary
+            current_e = next_e
+
+            bmadx_elements[i] = step_elements
 
         else:
             # This is annoying... but we have to use condition1 to test what the actual next element is
-            next_e = next((e_index for e_index in range(len(e_dists)-1) if condition1(e_dists[e_index], e_dists[e_index+1], step_position[i+1])), None)
+            next_e = next((e_index for e_index in range(len(e_dists)-1) if condition1(e_dists[e_index], e_dists[e_index+1], step_positions[i+1])), None)
 
             # Check if we are entering a new element perfectly (the current step is positioned at the start of the next element)
             if current_e != previous_e:
@@ -302,7 +328,6 @@ def get_bmdax_elements(lattice_config, e_dists, step_position, init_energy):
         previous_e = current_e
         
     return bmadx_elements
-
 
 def create_bmadx_element(lattice_config, ele, DL, beam_energy, entrance = False, exit = False):
         """
@@ -333,17 +358,7 @@ def create_bmadx_element(lattice_config, ele, DL, beam_energy, entrance = False,
             G = angle/L
 
             # If the dipole element we want to create includes an entrance and/or exit it is constructed slightly differently
-            if entrance and exit:
-                element = SBend(L = DL, P0C = beam_energy, G = G, E1 = E1, E2 = E2)
-
-            elif entrance:
-                element = SBend(L=DL, P0C=beam_energy, G=G, E1=E1, E2=0.0)
-
-            elif exit:
-                element = SBend(L=DL, P0C=beam_energy, G=G, E1=0.0, E2=E2)
-
-            else:
-                element = SBend(L=DL, P0C=beam_energy, G=G, E1=0.0, E2=0.0)
+            element = SBend(L = DL, P0C = beam_energy, G = G, E1 = E1 if entrance else 0.0, E2 = E2 if exit else 0.0)
 
         elif type == 'drift':
             element = Drift(L = DL)

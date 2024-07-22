@@ -1,3 +1,4 @@
+# Import standard library modules
 import math
 
 # Import third-party modules
@@ -72,7 +73,6 @@ class Beam():
             self._init_energy = np.mean(pg['energy'])
 
             self.particle = openpmd_to_bmadx_particles(pg, self._init_energy, 0.0, MC2)   #Bmad X particle
-            #self.particleGroup = pg              # Particle Group
 
         else:
             ParticleGroup_h5 = input_beam['ParticleGroup_h5']
@@ -82,13 +82,12 @@ class Beam():
             self._init_energy = np.mean(pg['energy'])
 
             self.particle = openpmd_to_bmadx_particles(pg, self._init_energy, 0.0, MC2)  # Bmad X particle
-            #self.particleGroup = pg  # Particle Group
 
         # unchanged, initial energy and gamma
         self._init_gamma = self._init_energy/MC2
 
         # Used during CSR wake computations
-        self.position = 0
+        self.s_position = 0
         self.step = 0
 
         self.update_status()
@@ -111,7 +110,7 @@ class Beam():
         elif input_beam['style'] == 'distgen':
             self.required_inputs = ['style', 'distgen_input_file']
         elif input_beam['style'] == 'ParticleGroup':
-            self.required_inputs = ['style', 'particleGroup_h5']
+            self.required_inputs = ['style', 'ParticleGroup_h5']
         else:
             raise Exception("input beam parsing Error: invalid input style")
 
@@ -133,7 +132,7 @@ class Beam():
         self._mean_x = self.mean_x
         self._mean_z = self.mean_z
 
-    def track(self, lattice, s_init, s_final):
+    def track(self, bmadx_elements):
         """
         Propagates the beam from one step to another in the lattice. May pass through multiple elements
         Parameters:
@@ -141,44 +140,67 @@ class Beam():
             s_init: s value of start of step
             s_final: s value at end of step
         """
+        # Track the particle through all bmadx ojects in this step
+        for element in bmadx_elements:
+            # Use bmadx to move the particle object
+            self.particle = track_element(self.particle, element)
+            self.s_position += element.L
 
+        # Update our step counter
+        self.step += 1
 
-        # Use bmadx to move the particle object
-        self.particle = track_element(self.particle, element)
+        # Round the position
+        self.s_position = round(self.s_position, 10)
 
-        # Update our current position
-        self.position += step_size
-
-        # When a step contains 2 lattice elements, we need to call this function twice, in this case we should not uopdate the step count
-        if update_step:
-            self.step += 1
-
+        # Updates the internal values
         self.update_status()
 
 
-    def apply_wakes(self, dE_dct, x_kick, xrange, zrange, step_size, transverse_on):
+    def apply_wakes(self, dE_vals, x_kick_vals, CSR_params, CSR_matrices, CSR_mesh, step_size):
         """
         Apply the CSR wake to the current position of the beam
         Paramters:
-            dE_dct, x_kick: array corresponding to the energy and momentum change of each csr mesh element
-            xrange, zrange: flatted 2D mesh grid corresponding to the CSR mesh coordinates
+            dE_vals, x_kick_vals: arrays corresponding to the energy and momentum change of each csr mesh element
+            CSR_param: dict detailing CSR mesh characteristics
+            CSR_mesh: the coordinates of the CSR mesh
+            CSR_matrices: the transformation matrices used to construct the CSR mesh
             step_size: the distance between the slices for which CSR is computed
-            transverse_only: booleans, indicates if the transverse wake should be applied
         """
-        # TODO: add options for transverse or longitudinal kick only
+        # Unpack CSR_params
+        (transverse_on,
+         pbins,
+         obins,
+         plim,
+         olim) = CSR_params["transverse_on"], CSR_params["pbins"], CSR_params["obins"], CSR_params["plim"], CSR_params["olim"]
+
         # Convert energy from J/m to eV/init_energy
-        dE_E1 = step_size * dE_dct * 1e6 / self.init_energy  # self.energy in eV
+        dE_vals = step_size * dE_vals * 1e6 / self.init_energy  # self.energy in eV
+
+        # Compute the std wrt to the parallel and orthogonal directions
+        p_sd, o_sd = self.get_std_wrt_linear_fit()
+
+        # The dimensions of the CSR mesh (non rotated)
+        o_dim = np.linspace(-olim*o_sd, olim*o_sd, obins)
+        p_dim = np.linspace(-plim*p_sd, plim*p_sd, pbins)
 
         # Create an interpolator that will transfer the CSR wake from the CSR mesh to the beam's particles
-        interp = RegularGridInterpolator((xrange, zrange), dE_E1, fill_value=0.0, bounds_error=False)
+        dE_interp = RegularGridInterpolator((o_dim, p_dim), dE_vals, fill_value=0.0, bounds_error=False)
+
+        # Put the beam macro particle positions in the space where the grid is rotated
+        particle_positions = (((np.stack((self.z, self.x))).T - CSR_matrices["t2"]) @ CSR_matrices["R_inv"].T)
+
+        # Swap the columns of particle positions to match ij indexing
+        particle_positions = particle_positions[:, [1, 0]]
 
         # Apply the interpolator to populate the change in momentum for all particles in the beam
-        dE_Es = interp(np.array([self.x_transform, self.z]).T)
+        dE_per_particle = dE_interp(particle_positions)
 
         # Apply longitudinal kick, note that since the electrons are moving at near the speed of light,
         # change in momentum is roughly equal to change in energy
-        pz_new = self.particle.pz + dE_Es
+        pz_new = self.particle.pz + dE_per_particle
 
+
+        """
         # Use the same process as above to apply the transverse wake
         if transverse_on:
             dxp = step_size * x_kick * 1e6 / self.init_energy
@@ -188,7 +210,8 @@ class Beam():
 
         else:
             px_new = self.particle.px
-
+        """
+        px_new = self.particle.px
         # Update the particle object with the new energy and momentum values
         self.particle = Particle(self.particle.x, px_new,
                                  self.particle.y, self.particle.py,

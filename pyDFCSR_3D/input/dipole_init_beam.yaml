@@ -1,5 +1,5 @@
 n_particle: 1000000
-#n_particle: 8
+#n_particle: 1000
 species: electron
 px_dist:
   sigma_px:
@@ -55,7 +55,7 @@ transforms:
     shear_coefficient:
       #units: 'gigaelectron_volt/speed_of_light/meter'
       units: ""
-      value: 0
+      value: 0.5
     #type: shear z:pz
     type: shear x:z
 

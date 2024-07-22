@@ -1,8 +1,10 @@
 # Import standard library modules
+import os
 
 # Import third-party modules
 import numpy as np
 import matplotlib.pyplot as plt
+import h5py
 
 # Import modules specific to this package
 from utility_functions import check_input_consistency, isotime
@@ -59,80 +61,195 @@ class CSR3D:
         """
         Computes the CSR wake at each step in the lattice
         """
-        for step_index, snapshot in enumerate(self.step_snapshots):
-            # Propagate beam -> Beam class
-            # Populate snapshot -> Step_Snapshot class
-            # Get CSR mesh
-            # Create integration mesh
-            # Compute integrand
-            # Compute wake via trapezoidal integration
+        
+        # Populate the first snapshot
+        self.step_snapshots[0].populate(self.beam)
+        self.update_statistics(0)
+        self.dump_beam(directory="/Users/treyfischbach/Desktop/Stuff/Research/SLAC 2024/Program Output/Benchmarking new code to old code")
+        
+        # Starting at the second snapshot, we propagate, populate, compute CSR, and apply CSR
+        for step_index, snapshot in enumerate(self.step_snapshots[1:], start=1):
+
+            # Propagate the beam to the current step position
+            self.beam.track(self.lattice.bmadx_elements[step_index-1])
+
+            # Populate the step_snapshot with the beam distribution
+            CSR_params, CSR_matrices, CSR_mesh = snapshot.populate(self.beam)
+
+            # Compute CSR_wake on the mesh
+            dE_vals, x_kick_vals = self.compute_CSR_on_mesh(CSR_mesh)
+
             # Apply to beam
-            #print(step_index)
-            pass
+            self.beam.apply_wakes(dE_vals, x_kick_vals, CSR_params, CSR_matrices, CSR_mesh, self.lattice.step_size)
+
+            # Populate the step_snapshot with the new beam distribution, do not update the CSR_mesh
+            snapshot.populate(self.beam, update_CSR_mesh = False)
+
+            # Dump the beam at this step if desired by the user
+            if (step_index+1) in self.CSR_mesh_params["write_beam"]:
+                self.dump_beam(directory="/Users/treyfischbach/Desktop/Stuff/Research/SLAC 2024/Program Output/Benchmarking new code to old code")
+
+            # Update the statistics dict
+            self.update_statistics(step_index)
         
-        #"""
+        # Dumps the final beam
+        self.dump_beam(directory="/Users/treyfischbach/Desktop/Stuff/Research/SLAC 2024/Program Output/Benchmarking new code to old code")
 
-        #""""
-        self.step_snapshots[0].populate(self.beam)
-        self.step_snapshots[0].plot_histogram(self.step_snapshots[0].density, "density")
-        self.step_snapshots[0].plot_surface(self.step_snapshots[0].density, "density")
-        self.step_snapshots[0].plot_histogram(self.step_snapshots[0].beta_x, "beta_x")
-        self.step_snapshots[0].plot_surface(self.step_snapshots[0].beta_x, "beta_x")
-        self.step_snapshots[0].plot_histogram(self.step_snapshots[0].partial_density_x, "partial_density_x")
-        self.step_snapshots[0].plot_surface(self.step_snapshots[0].partial_density_x, "partial_density_x")
-        self.step_snapshots[0].plot_histogram(self.step_snapshots[0].partial_density_z, "partial_density_z")
-        self.step_snapshots[0].plot_surface(self.step_snapshots[0].partial_density_z, "partial_density_z")
-        self.step_snapshots[0].plot_histogram(self.step_snapshots[0].partial_beta_x, "partial_beta_x")
-        self.step_snapshots[0].plot_surface(self.step_snapshots[0].partial_beta_x, "partial_beta_x")
+    def compute_CSR_on_mesh(self, CSR_mesh):
+        """
+        Computes the CSR wake at each point in the CSR_mesh
+        """
+        # Flatten the CSR_mesh
+        Z = CSR_mesh[:,:,0].flatten()
+        X = CSR_mesh[:,:,1].flatten()
+
+        # Define the arrays where the wake values will be stored
+        dE_vals = np.zeros(len(Z))
+        x_kick_vals = np.zeros(len(Z))
+
+        # For each point on the CSR_mesh, compute dE and x_kick and update their respective arrays
+        for index in range(len(X)):
+            s = self.beam.s_position + Z[index]
+            x = X[index]
+
+            dE_vals[index], x_kick_vals[index] = self.compute_CSR_at_point(s, x)
+
+        # Reshape dE_vals and x_kick_vals to be the dimension of the mesh again
+        original_shape = CSR_mesh.shape[:2]
+        dE_vals = dE_vals.reshape(original_shape)
+        x_kick_vals = x_kick_vals.reshape(original_shape)
+
+        return dE_vals, x_kick_vals
+
+    def compute_CSR_at_point(self, s, x):
+        """
+        Helper function to compute_CSR_on_mesh, computes the CSR wake at a singular point on the CSR mesh
+        """
+        # Compute the integration areas
+        integration_areas = self.get_integration_areas(s, x)
+
+        # Initialize the dE and x_kick
+        dE = 0
+        x_kick = 0
+
+        # Compute the integrand over each area, integrate, and then sum the contribution
+        for area in integration_areas:
+            integrand_z, integrand_x = self.get_CSR_integrand(area)
+
+            # Integrate over these real quick using trap
+            dE += 0 # trap(integrand_z)
+            x_kick += 0# trap(integrand_x)
+
+        return dE, x_kick
+    
+    def get_integration_areas(self, s, x):
+        """
+        Helper function to compute_CSR_at_point. Given a point on the CSR mesh, computes the three or 
+        four areas of space in the lab frame over which we must integrate
+        """
+        integration_areas = []
+
+        return integration_areas
+    
+    def get_CSR_integrand(self, s, x, t, integration_area):
+        """
+        Helper function to compute_CSR_at_point, finds the integrand contribution (W1 + W2 + W3) of the inputed integration area
+        to the specific point
+        """
+        return 0
+
+    def update_statistics(self, step):
+        """
+        Updates the statistics dictionary with the current step's beam characteristics
+        """
+        twiss = self.beam.twiss
+        self.statistics['twiss']['alpha_x'][step] = twiss['alpha_x']
+        self.statistics['twiss']['beta_x'][step] = twiss['beta_x']
+        self.statistics['twiss']['gamma_x'][step] = twiss['gamma_x']
+        self.statistics['twiss']['emit_x'][step] = twiss['emit_x']
+        self.statistics['twiss']['eta_x'][step] = twiss['eta_x']
+        self.statistics['twiss']['etap_x'][step] = twiss['etap_x']
+        self.statistics['twiss']['norm_emit_x'][step] = twiss['norm_emit_x']
+        self.statistics['twiss']['alpha_y'][step] = twiss['alpha_y']
+        self.statistics['twiss']['beta_y'][step] = twiss['beta_y']
+        self.statistics['twiss']['gamma_y'][step] = twiss['gamma_y']
+        self.statistics['twiss']['emit_y'][step] = twiss['emit_y']
+        self.statistics['twiss']['eta_y'][step] = twiss['eta_y']
+        self.statistics['twiss']['etap_y'][step] = twiss['etap_y']
+        self.statistics['twiss']['norm_emit_y'][step] = twiss['norm_emit_y']
+        self.statistics['slope'][step, :] = self.beam._slope
+        self.statistics['sigma_x'][step] = self.beam._sigma_x
+        self.statistics['sigma_z'][step] = self.beam._sigma_z
+        self.statistics['sigma_energy'][step] = self.beam.sigma_energy
+        self.statistics['mean_x'][step] = self.beam._mean_x
+        self.statistics['mean_z'][step] = self.beam._mean_z
+        self.statistics['mean_energy'][step] = self.beam.mean_energy
+
+    def save_data(self, directory="", filename=""):
+        """
+        Once all step_snapshots have been populated we save their data into an h5 file
+        """
+        if not filename:
+            filename = f"{self.prefix}.h5"
+    
+        if not directory:
+            directory = '.'  # Default to current directory if no directory is specified
         
-
-        print(np.tan(self.step_snapshots[0].tilt_angle))
-        #"""
-
-
-        """
-        self.step_snapshots[0].populate(self.beam)
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-
-        data_Jingyi = np.load("data_program1.npz")
-        Z1 = data_Jingyi["Z"]
-        X1 = data_Jingyi["X"]
-        density1 = data_Jingyi["intensity_vals"]
-
-        Z2 = self.step_snapshots[0].mesh_coords[:, :, 1]
-        X2 = self.step_snapshots[0].mesh_coords[:, :, 0]
-        density2 = self.step_snapshots[0].density
-
-        # Plot the first dataset
-        surface1 = ax.plot_surface(Z1, X1, density1, cmap='viridis', alpha=0.5)
-
-        # Plot the second dataset
-        surface2 = ax.plot_surface(Z2, X2, density2, cmap='plasma', alpha=0.5)
-
-        # Labels
-        ax.set_xlabel('X axis')
-        ax.set_ylabel('Y axis')
-
-        plt.show()
-        """
-
-        #self.step_snapshots[0].plot_grid_transformation(self.beam)
-
+        # Ensure the directory exists
+        os.makedirs(directory, exist_ok=True)
         
+        # Construct the full file path
+        file_path = os.path.join(directory, filename)
 
+        # Save snapshot instances and statistics dictionary to an HDF5 file
+        with h5py.File(file_path, 'w') as f:
+            # snapshots
+            for i, instance in enumerate(self.step_snapshots):
+                grp = f.create_group(f'step_snapshot_{i}')
+                grp.create_dataset('h_coords', data=instance.h_coords)
+                grp.create_dataset('density', data=instance.density)
+                grp.create_dataset('partial_density_x', data=instance.partial_density_x)
+                grp.create_dataset('partial_density_z', data=instance.partial_density_z)
+                grp.create_dataset('beta_x', data=instance.beta_x)
+                grp.create_dataset('partial_beta_x', data=instance.partial_beta_x)
+                grp.attrs['x_mean'] = instance.x_mean
+                grp.attrs['z_mean'] = instance.z_mean
+                grp.attrs['tilt_angle'] = instance.tilt_angle
+                grp.attrs['s_val'] = instance.s_val
+
+            # statistics
+            stats_grp = f.create_group('statistics')
+            for key, value in self.statistics.items():
+                if isinstance(value, dict):
+                    sub_grp = stats_grp.create_group(key)
+                    for sub_key, sub_value in value.items():
+                        sub_grp.create_dataset(sub_key, data=sub_value)
+                else:
+                    stats_grp.create_dataset(key, data=value)
+            
+    def dump_beam(self, directory="", filename=""):
         """
-        self.step_snapshots[0].populate(self.beam)
-        self.step_snapshots[0].plot_grid_transformation(self.beam)
-        print(np.tan(self.step_snapshots[0].tilt_angle))
-
+        Record the current beam in the particle_group format
         """
-        for a in self.lattice.bmadx_elements:
-            print(a)
-            print("")
+        if not filename:
+            filename = str(self.beam.step) + ".h5"
+    
+        if not directory:
+            directory = '.'  # Default to current directory if no directory is specified
+        
+        # Ensure the directory exists
+        os.makedirs(directory, exist_ok=True)
+        
+        # Construct the full file path
+        file_path = os.path.join(directory, filename)
 
+        if os.path.isfile(filename):
+            os.remove(filename)
+            print("Existing file " + filename + " deleted.")
 
+        print("Beam at position {} is written to {}".format(self.beam.s_position, filename))
+
+        self.beam.particle_group.write(file_path)
 
     def demonstrate_coordinate_transfer(self):
         """

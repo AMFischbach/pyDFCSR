@@ -20,7 +20,6 @@ CSR_integration:
   zbins: 100
   xbins: 100
 
-
 CSR_computation:
   compute_CSR: 1                 # if zero, only track the beam
   apply_CSR: 1                   # flag apply CSR to particles
@@ -30,9 +29,9 @@ CSR_computation:
   xlim: 3
   zlim: 3
   write_beam: [1, 10]           # 'all',  None, [list of steps]
-  write_wakes: True
+  write_wakes: False
   write_name: 'dipole'
-  workdir: './output'
+  workdir: '/Users/treyfischbach/Desktop/Stuff/Research/SLAC 2024/Program Output/Benchmarking new code to old code'
 
 
 
