@@ -198,7 +198,7 @@ class CSR2D:
         """
         Computes the formation length of the nominal path
         Parameters:
-            sigma_z: RMS beam size (in x direction)
+            sigma_z: RMS beam size (in z direction)
             R: distance from observation point to retarded point of emittance
             phi: radius of the beam from origin (only used if in curve)
             inbend: boolean, indicates if nominal path is bending

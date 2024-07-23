@@ -89,7 +89,7 @@ class Step_Snapshot():
         self.z_mean = beam.mean_z
         self.p_sd, self.o_sd = beam.get_std_wrt_linear_fit()
         self.tilt_angle = beam.tilt_angle
-        self.s_val = beam.s_position
+        self.s_val = beam.position
 
         # Popultate transformation matrices for histogram mesh (not in ij format)
         (self.h_matrices["t1"],

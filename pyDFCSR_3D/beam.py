@@ -87,7 +87,7 @@ class Beam():
         self._init_gamma = self._init_energy/MC2
 
         # Used during CSR wake computations
-        self.s_position = 0
+        self.position = 0
         self.step = 0
 
         self.update_status()
@@ -144,13 +144,13 @@ class Beam():
         for element in bmadx_elements:
             # Use bmadx to move the particle object
             self.particle = track_element(self.particle, element)
-            self.s_position += element.L
+            self.position += element.L
 
         # Update our step counter
         self.step += 1
 
         # Round the position
-        self.s_position = round(self.s_position, 10)
+        self.position = round(self.position, 10)
 
         # Updates the internal values
         self.update_status()
