@@ -44,6 +44,7 @@ class Lattice():
         (self.step_size,
          self.total_steps,
          self.step_positions,
+         self.step_ranges,
          self.compute_CSR) = get_step_characteristics(self.lattice_config, self.element_distances, self.CSR_step_seperation)
 
         # Loops through the steps again to compute bmadx_elements for each step

@@ -76,7 +76,10 @@ def get_step_characteristics(lattice_config, element_distances, CSR_step_seperat
         for step in CSR_steps_index:
             compute_CSR[int(step)] = True
         
-        return step_size, total_steps, step_position, compute_CSR
+        # Compute the step ranges
+        step_ranges = np.array([(step_position[i], step_position[i + 1]) for i in range(len(step_position) - 1)], dtype=np.float64)
+
+        return step_size, total_steps, step_position, step_ranges, compute_CSR
 
 def get_element_characteristics(lattice_config):
     """

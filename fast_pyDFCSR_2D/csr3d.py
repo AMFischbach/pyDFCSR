@@ -1,5 +1,6 @@
 # Import standard library modules
 import os
+import sys
 
 # Import third-party modules
 import numpy as np
@@ -8,14 +9,16 @@ from matplotlib.patches import Polygon
 import h5py
 from bmadx import  Drift, SBend, Quadrupole, Sextupole
 from tqdm import tqdm
+from line_profiler import profile
 
 # Import modules specific to this package
 from utility_functions import check_input_consistency, isotime
 from yaml_parser import parse_yaml
 from attribute_initializer import init_attributes
 from lattice import Lattice
-from interpolation import interpolate1D, interpolate3D
-
+from beam import Beam
+from df_tracker import DF_Tracker
+from interpolation import *
 
 """
 Module Name: csr3d.py
@@ -48,7 +51,10 @@ class CSR3D:
          self.CSR_mesh_params,
          self.lattice,
          self.beam,
-         self.step_snapshots) = init_attributes(self.input_dict)
+         self.df_tracker) = init_attributes(self.input_dict)
+
+        # charge in C (8.98755e-6 MeV/m for 1nC/m^2)
+        self.CSR_scaling = 8.98755e3 * self.beam.charge 
 
         # Get the current time
         self.timestamp = isotime()
@@ -62,39 +68,37 @@ class CSR3D:
         else:
             self.parallel = False
 
+        print("done with init")
+
     def run(self):
         """
         Computes the CSR wake at each step in the lattice
         """
         
-        # Populate the first snapshot
-        self.step_snapshots[0].populate(self.beam)
+        # Populate the df_tracker with the first step
+        self.df_tracker.populate_step(0, self.beam)
         self.update_statistics(0)
-
-        self.dump_beam(directory="/Users/amf16/Desktop/SULI 2024/Simulation Output")
         
-        # Starting at the second snapshot, we propagate, populate, compute CSR, and apply CSR
-        for step_index, snapshot in enumerate(self.step_snapshots[1:], start=1):
-
+        # Starting at the second step, we propagate, populate, compute CSR, and apply CSR
+        #for step_index in tqdm(range(1, self.df_tracker.total_steps)):
+        for step_index in range(1, 2):
             # Propagate the beam to the current step position
             self.beam.track(self.lattice.bmadx_elements[step_index-1])
 
-            # Populate the step_snapshot with the beam distribution
-            CSR_params, CSR_matrices, CSR_mesh = snapshot.populate(self.beam)
+            # Populate the  with the beam distribution
+            csr_params, t2_csr, R_inv_csr, CSR_mesh = self.df_tracker.populate_step(step_index, self.beam)
 
             # Compute the formation length of the beam at this moment in time
-            #formation_length = self.get_formation_length(step_index)
+            formation_length = self.get_formation_length(step_index)
 
             # Compute CSR_wake on the mesh
-            #dE_vals, x_kick_vals = self.compute_CSR_on_mesh(CSR_mesh, formation_length)
+            dE_vals, x_kick_vals = self.compute_CSR_on_mesh(CSR_mesh, formation_length, step_index)
 
             # Apply to beam
-            #self.beam.apply_wakes(dE_vals, x_kick_vals, CSR_params, CSR_matrices, CSR_mesh, self.lattice.step_size)
+            self.beam.apply_wakes(dE_vals, x_kick_vals, csr_params, t2_csr, R_inv_csr, self.lattice.step_size)
 
-            # Populate the step_snapshot with the new beam distribution, do not update the CSR_mesh
-            #snapshot.populate(self.beam, update_CSR_mesh = False)
-
-            snapshot.plot_grid_transformation(self.beam, snapshot.h_params, snapshot.h_coords)
+            # Populate the df_tracker with the new beam distribution, do not update the CSR_mesh
+            self.df_tracker.populate_step(step_index, self.beam, update_CSR_mesh = False)
 
             # Dump the beam at this step if desired by the user
             if (step_index+1) in self.CSR_mesh_params["write_beam"]:
@@ -102,9 +106,6 @@ class CSR3D:
 
             # Update the statistics dict
             self.update_statistics(step_index)
-
-        # Dumps the final beam
-        self.dump_beam(directory="/Users/amf16/Desktop/SULI 2024/Simulation Output")
 
     # TODO: fix the case for non dipole elements
     def get_formation_length(self, step_index):
@@ -124,7 +125,7 @@ class CSR3D:
 
         return (24 * (R ** 2) * self.beam.sigma_z) ** (1 / 3)
 
-    def compute_CSR_on_mesh(self, CSR_mesh, formation_length):
+    def compute_CSR_on_mesh(self, CSR_mesh, formation_length, step_index):
         """
         Computes the CSR wake at each point in the CSR_mesh
         Parameters:
@@ -146,11 +147,11 @@ class CSR3D:
         z_std = self.beam.sigma_z
 
         # For each point on the CSR_mesh, compute dE and x_kick and update their respective arrays
-        for index in tqdm(range(len(X))):
+        for index in range(len(X)):
             s = self.beam.position + Z[index]
             x = X[index]
 
-            dE_vals[index], x_kick_vals[index] = self.compute_CSR_at_point(s, x, formation_length, linear_fit, x_mean, x_std, z_std)
+            dE_vals[index], x_kick_vals[index] = self.compute_CSR_at_point(s, x, formation_length, linear_fit, x_mean, x_std, z_std, step_index)
 
         # Reshape dE_vals and x_kick_vals to be the dimension of the mesh again
         original_shape = CSR_mesh.shape[:2]
@@ -159,7 +160,7 @@ class CSR3D:
 
         return dE_vals, x_kick_vals
 
-    def compute_CSR_at_point(self, s, x, formation_length, linear_fit, x_mean, x_std, z_std, plot=False):
+    def compute_CSR_at_point(self, s, x, formation_length, linear_fit, x_mean, x_std, z_std, step_index, plot=False):
         """
         Helper function to compute_CSR_on_mesh, computes the CSR wake at a singular point on the CSR mesh
         Parameters:
@@ -176,11 +177,11 @@ class CSR3D:
 
         # Compute the integrand over each area, integrate, and then sum the contribution
         for area in integration_areas:
-            integrand_z, integrand_x = self.get_CSR_integrand(s, x, area)
+            integrand_z, integrand_x = self.get_CSR_integrand(s, x, area, step_index)
 
             # Integrate over these real quick using trap
-            dE += 0 # trap(integrand_z)
-            x_kick += 0# trap(integrand_x)
+            dE += -self.CSR_scaling * np.trapz(y=np.trapz(y=integrand_z, x=area[0][:, 0], axis=0), x=area[1][0,:])
+            x_kick += self.CSR_scaling * np.trapz(y=np.trapz(y=integrand_x, x=area[0][:, 0], axis=0), x=area[1][0,:])
 
         return dE, x_kick
     
@@ -296,7 +297,8 @@ class CSR3D:
 
         return integration_areas
     
-    def get_CSR_integrand(self, s, x, area):
+    #@profile
+    def get_CSR_integrand(self, s, x, area, step_index):
         """
         Helper function to compute_CSR_at_point, finds the integrand contribution (W1 + W2 + W3) of the inputed integration area
         to the specific point
@@ -355,46 +357,94 @@ class CSR3D:
             else:
                 rho_sp[(sp_flat < self.lattice.element_distances[count]) & (sp_flat >= self.lattice.element_distances[count - 1])] = self.lattice.element_rho_vals[count]
 
-        density_ret = interpolate3D(ret_tvals = t_ret, svals = sp_flat - t_ret, xvals = xp_flat, step_snapshots = self.step_snapshots, step_size = self.lattice.step_size)
+        ranges = self.lattice.step_ranges[0:step_index]
+        # Interpolate the velocity of the beam at the current point
+        translated_point = translate_points(np.array([t]), np.array([s-t]), np.array([x]),
+                                             self.df_tracker.t1_h, self.df_tracker.C_inv_h, self.df_tracker.R_inv_h, self.df_tracker.t2_h,
+                                             self.lattice.step_ranges, np.array([0]), np.zeros((1, 5)))
+        vx = interpolate3D(translated_point, [self.df_tracker.beta_x], self.lattice.step_size, np.zeros((5, 1)))[0][0]
 
-        """
-        # Compute various vector and scalar valued functions inside the integrand
-        density_ret = interpolate3D(xval = t_ret, yval = xp_flat, zval = sp_flat - t_ret,
-                                  data = self.DF_tracker.data_density_interp,
-                                  min_x = self.DF_tracker.min_x, min_y = self.DF_tracker.min_y,  min_z = self.DF_tracker.min_z,
-                                  delta_x = self.DF_tracker.delta_x, delta_y = self.DF_tracker.delta_y, delta_z = self.DF_tracker.delta_z)
+        # Initialize translated mesh points and the index of each point
+        translated_points = np.zeros((len(t_ret), 5))
+        p_indices = np.arange(len(t_ret), dtype=int)
 
+        # Populate the translated mesh points with all the points on the mesh
+        translated_points = translate_points(t_ret, sp_flat - t_ret, xp_flat,
+                                             self.df_tracker.t1_h, self.df_tracker.C_inv_h, self.df_tracker.R_inv_h, self.df_tracker.t2_h,
+                                             self.lattice.step_ranges, p_indices, translated_points)
+
+        # Interpolate retarted time quantites!
+        interp_result = np.zeros((5, len(t_ret)), dtype=np.float64)
+        interp_data = (self.df_tracker.densities, 
+                       self.df_tracker.beta_x, 
+                       self.df_tracker.partial_density_x, 
+                       self.df_tracker.partial_density_z,
+                       self.df_tracker.partial_beta_x)
         
-        density_x_ret = interpolate3D(xval=t_ret, yval=xp_flat, zval=sp_flat - t_ret,
-                                  data=self.DF_tracker.data_density_x_interp,
-                                  min_x=self.DF_tracker.min_x, min_y=self.DF_tracker.min_y, min_z=self.DF_tracker.min_z,
-                                  delta_x=self.DF_tracker.delta_x, delta_y=self.DF_tracker.delta_y,
-                                  delta_z=self.DF_tracker.delta_z)
+        interp_result = interpolate3D(translated_points, interp_data, self.lattice.step_size, interp_result)
 
-        density_z_ret = interpolate3D(xval=t_ret, yval=xp_flat, zval=sp_flat - t_ret,
-                                    data=self.DF_tracker.data_density_z_interp,
-                                    min_x=self.DF_tracker.min_x, min_y=self.DF_tracker.min_y,
-                                    min_z=self.DF_tracker.min_z,
-                                    delta_x=self.DF_tracker.delta_x, delta_y=self.DF_tracker.delta_y,
-                                    delta_z=self.DF_tracker.delta_z)
+        # Unpack the interpolate result
+        density_ret = interp_result[0]
+        beta_x_ret = interp_result[1]
+        partial_density_x_ret = interp_result[2]
+        partial_density_z_ret = interp_result[3]
+        partial_beta_x = interp_result[4]
 
-        vx_ret = interpolate3D(xval=t_ret, yval=xp_flat, zval=sp_flat - t_ret,
-                                    data=self.DF_tracker.data_vx_interp,
-                                    min_x=self.DF_tracker.min_x, min_y=self.DF_tracker.min_y,
-                                    min_z=self.DF_tracker.min_z,
-                                    delta_x=self.DF_tracker.delta_x, delta_y=self.DF_tracker.delta_y,
-                                    delta_z=self.DF_tracker.delta_z)
+        # TODO: More accurate vx, maybe add vs
+        # TODO: Compute vx
+        vs = 1
+        vs_ret = 1
+        vs_s_ret = 0
 
-        vx_x_ret = interpolate3D(xval=t_ret, yval=xp_flat, zval=sp_flat - t_ret,
-                             data=self.DF_tracker.data_vx_x_interp,
-                             min_x=self.DF_tracker.min_x, min_y=self.DF_tracker.min_y,
-                             min_z=self.DF_tracker.min_z,
-                             delta_x=self.DF_tracker.delta_x, delta_y=self.DF_tracker.delta_y,
-                             delta_z=self.DF_tracker.delta_z)
-        """
+        # Accounts for transfer to the lab frame
+        scale_term =  1 + xp_flat*rho_sp
 
+        # Compute velocity in the lab frame for current time and retarded
+        velocity_x = vs * tau_vec_s_x + vx * n_vec_s_x
+        velocity_y = vs * tau_vec_s_y + vx * n_vec_s_y
+        velocity_ret_x = vs_ret * tau_vec_sp_x + beta_x_ret * n_vec_sp_x
+        velocity_ret_y = vs_ret * tau_vec_sp_y + beta_x_ret * n_vec_sp_y
 
-        return 0, 0
+        nabla_density_ret_x = partial_density_x_ret  * n_vec_sp_x + partial_density_z_ret / scale_term * tau_vec_sp_x
+        nabla_density_ret_y = partial_density_x_ret * n_vec_sp_y + partial_density_z_ret / scale_term * tau_vec_sp_y
+
+        div_velocity = vs_s_ret + partial_beta_x
+
+        # TODO: Consider using general form
+        ## general form
+        # part1: beta dot beta prime
+        part1 = velocity_x * velocity_ret_x + velocity_y * velocity_ret_y
+
+        # Some numerators found in the longitudinal wake integrals
+        CSR_numerator1 = scale_term * ((velocity_x - part1 * velocity_ret_x) * nabla_density_ret_x  + \
+                          (velocity_y - part1 * velocity_ret_y)*nabla_density_ret_y)
+        CSR_numerator2 = -scale_term * part1 * density_ret * div_velocity
+
+        CSR_integrand_z = CSR_numerator1 /r_minus_rp + (CSR_numerator2) / r_minus_rp
+
+        n_minus_np_x = n_vec_s_x - n_vec_sp_x
+        n_minus_np_y = n_vec_s_y - n_vec_sp_y
+
+        # part1: (r-r')(n - n')
+        part1 = r_minus_rp_x * n_minus_np_x + r_minus_rp_y * n_minus_np_y
+
+        #part2: n tau'
+        part2 = n_vec_s_x * tau_vec_sp_x + n_vec_s_y * tau_vec_sp_y
+
+        # part3: partial density/partial t_ret
+        partial_density = - (velocity_ret_x * nabla_density_ret_x + velocity_ret_y * nabla_density_ret_y) - \
+                          density_ret * div_velocity
+
+        # Three integrands for logitudinal wake
+        W1 = scale_term * part1 / (r_minus_rp * r_minus_rp * r_minus_rp) * density_ret
+        W2 = scale_term * part1 / (r_minus_rp * r_minus_rp) * partial_density
+        W3 = -scale_term * part2 / r_minus_rp * partial_density
+
+        CSR_integrand_x = W1 + W2 + W3
+        CSR_integrand_x = CSR_integrand_x.reshape(area[0].shape)
+        CSR_integrand_z = CSR_integrand_z.reshape(area[1].shape)
+
+        return CSR_integrand_z, CSR_integrand_x
 
     def update_statistics(self, step):
         """
@@ -440,7 +490,9 @@ class CSR3D:
         file_path = os.path.join(directory, filename)
 
         # Save snapshot instances and statistics dictionary to an HDF5 file
+       
         with h5py.File(file_path, 'w') as f:
+            """
             # snapshots
             for i, instance in enumerate(self.step_snapshots):
                 grp = f.create_group(f'step_snapshot_{i}')
@@ -454,6 +506,7 @@ class CSR3D:
                 grp.attrs['z_mean'] = instance.z_mean
                 grp.attrs['tilt_angle'] = instance.tilt_angle
                 grp.attrs['s_val'] = instance.s_val
+            """
 
             # statistics
             stats_grp = f.create_group('statistics')
@@ -533,42 +586,75 @@ class CSR3D:
         """
         Verifies that the index and position transfer works
         """
-        # Make the plot
+        # populate the first snapshot
+        self.df_tracker.populate_step(0, self.beam)
+
+        # pick some random positions on the beam to compute indices
+        # "0" is the retarded time
+        test_positions = np.array([[0, self.beam.z[5], self.beam.x[5]],
+                          [0, self.beam.z[10], self.beam.x[10]],
+                          [0, self.beam.z[25], self.beam.x[25]],
+                          [0, self.beam.z[1], self.beam.x[1]],
+                          [0, self.beam.z[2], self.beam.x[2]]])
+        
+        # fake retarded time ranges
+        ranges = [[0,1]]
+        p_indices = np.arange(5, dtype=int)
+        translated_points = np.zeros((5, 5))
+
+        translated_points = translate_points(test_positions[:, 0], test_positions[:,1], test_positions[:,2],
+                                             self.df_tracker.t1_h, self.df_tracker.C_inv_h, self.df_tracker.R_inv_h, self.df_tracker.t2_h,
+                                             ranges, p_indices, translated_points)
+
+
+
+        # Make the plot for the beam
         fig, ax = plt.subplots()
 
-        # populate the first snapshot
-        self.df_tracker.snapshots[0].populate(self.beam)
+        # Plot the histogram mesh
+        X = self.df_tracker.h_coords[0][:, :, 0]
+        Z = self.df_tracker.h_coords[0][:, :, 1]
+        self.plot_mesh(ax, Z, X, color="black")
 
-        # test if index to position works
-        test_indices = [np.array([0,0], dtype=np.float64),
-                        np.array([3,0], dtype=np.float64),
-                        np.array([0,2], dtype=np.float64),
-                        np.array([8,10], dtype=np.float64),
-                        np.array([2,11], dtype=np.float64),
-                        np.array([19,19], dtype=np.float64)]
+        # Plot the test points
+        for point in test_positions:
+            ax.scatter(point[1], point[2], color="red", s=10)
 
-        for index in test_indices:
-            position = self.df_tracker.snapshots[0].index2position(index)
-            ax.scatter(position[0], position[1], color="purple", s=20)
+        ax.axis("equal")
+        plt.show()
 
-        # test if position to index works
-        test_positions = [np.array([0.0, 0.0], dtype=np.float64),
-                          np.array([0.00011, 0.00005], dtype=np.float64),
-                          np.array([0.00011, -0.00005], dtype=np.float64),
-                          np.array([-0.00011, 0.00005], dtype=np.float64),
-                          np.array([-0.00011, -0.00005], dtype=np.float64),
-                          np.array([0.00015, -0.000025], dtype=np.float64)]
-        
-        # Plot the four nearest mesh vertices with the position marked as "x"
-        for position in test_positions:
-            indices = self.df_tracker.snapshots[0].position2index(position)
-            ax.scatter(position[0], position[1], marker="x", color="black", s=20)
+        # Make the plot for the coordinate space
+        fig, ax = plt.subplots()
 
-            for index in indices:
-                index_position = self.df_tracker.snapshots[0].index2position(index) 
-                ax.scatter(index_position[0], index_position[1], color="green", s=20)
-        
-        self.df_tracker.snapshots[0].plot_grid_transformation(self.beam, fig=fig, ax=ax)
+        # Plot the coordinate mesh
+        self.plot_mesh(ax, Z, X, color="blue")
+
+        # Make a coordinate mesh and plot it
+        mesh_z = np.arange(self.df_tracker.h_params["pbins"])
+        mesh_x = np.arange(self.df_tracker.h_params["obins"])
+        Z, X = np.meshgrid(mesh_z, mesh_x)
+        self.plot_mesh(ax, Z, X, "blue")
+
+        # Plot the test_positions in coordinate space
+        for point in translated_points:
+            ax.scatter(point[3], point[4], marker="x", color="black", s=20)
+
+
+        ax.axis("equal")
+        plt.show()
+
+
+    def plot_mesh(self, ax, Z, X, color='black'):
+        """
+        Plots the mesh
+        """
+        # Plot vertical grid lines (lines along X)
+        for i in range(X.shape[1]):
+            ax.plot(Z[:, i], X[:, i], color, linewidth=1.0)
+
+        # Plot horizontal grid lines (lines along Y)
+        for j in range(X.shape[0]):
+            ax.plot(Z[j, :], X[j, :], color, linewidth=1.0)
  
 
 

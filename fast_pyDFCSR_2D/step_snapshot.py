@@ -353,12 +353,12 @@ class Step_Snapshot():
         # Plot the line of best fit
         z_end = mesh_params["plim"]*self.p_sd * np.cos(self.tilt_angle)
         x_end = mesh_params["plim"]*self.p_sd * np.sin(self.tilt_angle)
-        ax.plot([-z_end, z_end], [-x_end, x_end], color="black", linewidth = 2, label = "line of best fit")
+        #ax.plot([-z_end, z_end], [-x_end, x_end], color="black", linewidth = 2, label = "line of best fit")
 
         # Plot the line orthonormal to the line of best fit
         z_end = mesh_params["olim"]*self.o_sd * np.cos(self.tilt_angle + np.pi/2)
         x_end = mesh_params["olim"]*self.o_sd * np.sin(self.tilt_angle + np.pi/2)
-        ax.plot([-z_end, z_end], [-x_end, x_end], color="purple", linewidth = 2, label = "line ortho to best fit")
+        #ax.plot([-z_end, z_end], [-x_end, x_end], color="purple", linewidth = 2, label = "line ortho to best fit")
 
         if title == "":
             title = "Scatter Plot of Beam Distribution with Mesh Overlay"

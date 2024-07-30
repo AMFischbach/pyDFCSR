@@ -1,5 +1,4 @@
-#n_particle: 1000000
-n_particle: 50
+n_particle: 1000000
 species: electron
 px_dist:
   sigma_px:
@@ -17,7 +16,7 @@ pz_dist:
     value: 5
   sigma_pz:
     units: MeV/c
-    value: 0.5
+    value: 0.1
   type: gaussian
 
 x_dist:
@@ -53,21 +52,7 @@ z_dist:
 transforms:
   s:
     shear_coefficient:
-      #units: 'gigaelectron_volt/speed_of_light/meter'
-      units: ""
-      value: 2
-    #type: shear z:pz
-    type: shear z:x
-
-#  twiss_x:
-#      alpha:
-#        units: dimensionless
-#        value: 2.6
-#      beta:
-#        units: meter
-#        value: 40
-#      emittance:
-#        units: nanometer
-#        value: 0.102
-#      type: set_twiss x
+      units: 'gigaelectron_volt/speed_of_light/meter'
+      value: 80
+    type: shear z:pz
 

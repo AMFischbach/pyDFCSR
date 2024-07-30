@@ -7,8 +7,8 @@ input_lattice:
   lattice_input_file: input//dipole_lattice.yaml
 
 particle_deposition:
-  pbins: 20        # number of grids in parallel direction for particle deposition
-  obins: 15         # number of grids in orthogonal direction for particle deposition
+  pbins: 150        # number of grids in parallel direction for particle deposition
+  obins: 200         # number of grids in orthogonal direction for particle deposition
   plim: 5            # range in parallel in the unit of sigma_x
   olim: 5            # range in orthogonal in the unit of sigma_z
   filter_order: 2    # 0 for no filter
@@ -17,14 +17,14 @@ particle_deposition:
 
 CSR_integration:
   n_formation_length: 1.5
-  zbins: 100
-  xbins: 100
+  zbins: 200
+  xbins: 200
 
 CSR_computation:
   compute_CSR: 1                 # if zero, only track the beam
   apply_CSR: 1                   # flag apply CSR to particles
   transverse_on: 1               # flag include transverse wake
-  pbins: 5                    # The mesh on which CSR wake is computed
+  pbins: 30                    # The mesh on which CSR wake is computed
   obins: 10
   plim: 3
   olim: 3

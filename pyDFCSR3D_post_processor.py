@@ -5,9 +5,8 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 
-sys.path.insert(0, '/Users/treyfischbach/Desktop/Stuff/Research/SLAC 2024/pyDFCSR/pyDFCSR_3D')
+sys.path.insert(0, '/Users/amf16/pyDFCSR/fast_pyDFCSR_2D')
 from beam import Beam
-from step_snapshot import Step_Snapshot
 
 """
 Module Name: post_processor.py
@@ -28,32 +27,7 @@ def load_new_data(filepath, load_histograms=False):
     statistics = {}
 
     with h5py.File(filepath, 'r') as f:
-        if load_histograms:
-            # Load snapshots
-            # Extract and sort snapshot keys
-            snapshot_keys = [key for key in f.keys() if key.startswith('step_snapshot_')]
-            sorted_snapshot_keys = sorted(snapshot_keys, key=lambda x: int(x.split('_')[-1]))
-
-            # Load snapshots in order
-            for key in sorted_snapshot_keys:
-                if key.startswith('step_snapshot_'):
-                    grp = f[key]
-                    instance = {}
-
-                    instance["h_coords"] = grp['h_coords'][:]
-                    instance["density"] = grp['density'][:]
-                    instance["partial_density_x"] = grp['partial_density_x'][:]
-                    instance["partial_density_z"] = grp['partial_density_z'][:]
-                    instance["beta_x"] = grp['beta_x'][:]
-                    instance["partial_beta_x"] = grp['partial_beta_x'][:]
-                    
-                    instance["x_mean"] = grp.attrs['x_mean']
-                    instance["z_mean"] = grp.attrs['z_mean']
-                    instance["tilt_angle"] = grp.attrs['tilt_angle']
-                    instance["s_val"] = grp.attrs['s_val']
-
-                    step_snapshots.append(instance)
-
+            
         # Load statistics
         stats_grp = f['statistics']
         for key in stats_grp.keys():
@@ -65,10 +39,7 @@ def load_new_data(filepath, load_histograms=False):
             else:
                 statistics[key] = item[:]
 
-    if load_histograms:
-        return step_snapshots, statistics
-    else:
-        return statistics
+    return statistics
 
 def load_old_data(filepath):
     statistics = {}
