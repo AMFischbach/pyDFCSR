@@ -593,6 +593,7 @@ class CSR2D:
 
         ######### For Debug ##########################################################
         if np.abs(tan_theta) <= 1:  # if theta <45 degre, the chirp band can be ignored. theta is the angle in z-x plane
+            #ignore_vx = False
             ignore_vx = False
         else:
             ignore_vx = False

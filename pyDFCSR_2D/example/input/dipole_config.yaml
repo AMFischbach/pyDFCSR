@@ -31,7 +31,7 @@ CSR_computation:
   write_beam: [1, 10]           # 'all',  None, [list of steps]
   write_wakes: False
   write_name: 'dipole'
-  workdir: '/Users/treyfischbach/Desktop/Stuff/Research/SLAC 2024/Program Output/Benchmarking new code to old code'
+  workdir: '/Users/amf16/Desktop/SULI 2024/Simulation Output'
 
 
 

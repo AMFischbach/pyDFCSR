@@ -16,7 +16,7 @@ spec = [
 ]
 
 @jit(nopython = True,  cache = True)
-def interpolate3D(xval, yval, zval, data, min_x, min_y, min_z,  delta_x, delta_y, delta_z):
+def interpolate3D(xval, yval, zval, data, min_x, min_y, min_z, delta_x, delta_y, delta_z):
     """
     Given a 3D mesh with each element assigned a value, linearly interpolates a value for any point within the mesh.
     Parameters:
